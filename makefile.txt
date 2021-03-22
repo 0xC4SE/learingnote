@@ -1,0 +1,192 @@
+math:main.o jia.o jian.o
+	gcc *.o -o $@ 		#$@代表ojbect，即math
+%.o:%.c
+	gcc -c $< -o $@ 	#$<是每一个依赖文件,main.o,jia.o,jian.o,依次执行命令
+	
+clean:
+	rm -f *.o math
+
+变量的使用
+#我们声明一个变量，叫 objects ， OBJECTS ， objs ， OBJS ， obj 或是 OBJ ，反正不管什么啦，只要能够表示obj文件就行了。我们在makefile一开始就这样定义：
+objects = main.o kbd.o command.o display.o \ 			#\的意思是换行，比较好看
+     insert.o search.o files.o utils.o
+#于是，我们就可以很方便地在我们的makefile中以 $(objects) 的方式来使用这个变量了，于是我们的改良版makefile就变成下面这个样子：
+objects = main.o kbd.o command.o display.o \
+    insert.o search.o files.o utils.o
+edit : $(objects)
+    gcc -o edit $(objects)
+main.o : main.c defs.h
+    gcc -c main.c
+clean :
+    rm edit $(objects)
+
+make自动推导
+#只要make看到一个 .o 文件，它就会自动的把 .c 文件加在依赖关系中，make找到一个 whatever.o ，那么 whatever.c 就会是 whatever.o 的依赖文件。并且 cc -c whatever.c 也会被推导出来，于是，我们的makefile再也不用写得这么复杂。我们的新makefile又出炉了。
+objects = main.o kbd.o command.o display.o \
+    insert.o search.o files.o utils.o
+
+edit : $(objects)
+    cc -o edit $(objects)
+
+main.o : defs.h
+kbd.o : defs.h command.h
+command.o : defs.h command.h
+display.o : defs.h buffer.h
+insert.o : defs.h buffer.h
+search.o : defs.h buffer.h
+files.o : defs.h buffer.h command.h
+utils.o : defs.h
+
+.PHONY : clean
+clean :
+    rm edit $(objects)
+
+清空目标
+#稳健的做法是：
+
+.PHONY : clean
+clean :
+    -rm edit $(objects)
+#前面说过， .PHONY 表示 clean 是一个“伪目标”。而在 rm 命令前面加了一个小减号的意思就是，也许某些文件出现问题，但不要管，继续做后面的事。
+#clean 的规则不要放在文件的开头，不然，这就会变成make的默认目标，相信谁也不愿意这样。不成文的规矩是——“clean从来都是放在文件的最后”。
+
+
+Makefile里有什么？
+#Makefile里主要包含了五个东西：显式规则、隐晦规则、变量定义、文件指示和注释。
+
+#1.显式规则。显式规则说明了如何生成一个或多个目标文件。这是由Makefile的书写者明显指出要生成的文件、文件的依赖文件和生成的命令。
+#2.隐晦规则。由于我们的make有自动推导的功能，所以隐晦的规则可以让我们比较简略地书写 Makefile，这是由make所支持的。
+#3.变量的定义。在Makefile中我们要定义一系列的变量，变量一般都是字符串，这个有点像你C语言中的宏，当Makefile被执行时，其中的变量都会被扩展到相应的引用位置上。
+#4.文件指示。其包括了三个部分，一个是在一个Makefile中引用另一个Makefile，就像C语言中的include一样；另一个是指根据某些情况指定Makefile中的有效部分，就像C语言中的预编译#if一样；还有就是定义一个多行的命令。有关这一部分的内容，我会在后续的部分中讲述。
+#5.注释。Makefile中只有行注释，和UNIX的Shell脚本一样，其注释是用 # 字符，这个就像C/C++中的 // 一样。如果你要在你的Makefile中使用 # 字符，可以用反斜杠进行转义，如： \# 。
+#最后，还值得一提的是，在Makefile中的命令，必须要以 Tab 键开始.
+
+Makefile的文件名
+#基本上来说，大多数的make都支持“makefile”和“Makefile”这两种默认文件名。
+
+#当然，你可以使用别的文件名来书写Makefile，比如：“Make.Linux”，“Make.Solaris”，“Make.AIX”等，如果要指定特定的Makefile，你可以使用make的 -f 和 --file 参数，如： make -f Make.Linux 或 make --file Make.AIX 。
+
+
+引用其他makefile
+#在Makefile使用 include 关键字可以把别的Makefile包含进来，这很像C语言的 #include ，被包含的文件会原模原样的放在当前文件的包含位置。 include 的语法是：
+
+include <filename>
+#filename 可以是当前操作系统Shell的文件模式（可以包含路径和通配符）.
+#在 include 前面可以有一些空字符，但是绝不能是 Tab 键开始。 include 和 <filename> 可以用一个或多个空格隔开。举个例子，你有这样几个Makefile： a.mk 、 b.mk 、 c.mk ，还有一个文件叫 foo.make ，以及一个变量 $(bar) ，其包含了 e.mk 和 f.mk ，那么，下面的语句：
+
+include foo.make *.mk $(bar)
+#等价于：
+
+include foo.make a.mk b.mk c.mk e.mk f.mk
+#make命令开始时，会找寻 include 所指出的其它Makefile，并把其内容安置在当前的位置。
+#如果文件都没有指定绝对路径或是相对路径的话，make会在当前目录下首先寻找，如果当前目录下没有找到，那么，make还会在下面的几个目录下找：
+#1.如果make执行时，有 -I 或 --include-dir 参数，那么make就会在这个参数所指定的目录下去寻找。
+#2.如果目录 <prefix>/include （一般是： /usr/local/bin 或 /usr/include ）存在的话，make也会去找。
+#如果你想让make不理那些无法读取的文件，而继续执行，你可以在include前加一个减号“-”
+
+
+文件搜索
+#Makefile文件中的特殊变量 VPATH 就是完成这个功能的，如果没有指明这个变量，make只会在当前的目录中去找寻依赖文件和目标文件。如果定义了这个变量，那么，make就会在当前目录找不到的情况下，到所指定的目录中去找寻文件了。
+
+VPATH = src:../headers
+#上面的定义指定两个目录，“src”和“../headers”，make会按照这个顺序进行搜索。目录由“冒号”分隔。（当然，当前目录永远是最高优先搜索的地方）
+
+另一个设置文件搜索路径的方法是使用make的“vpath”关键字（注意，它是全小写的）,这不是变量，这是一个make的关键字
+#vapth使用方法中的<pattern>需要包含 % 字符。 % 的意思是匹配零或若干字符，（需引用 % ，使用 \ ）例如， %.h 表示所有以 .h 结尾的文件。<pattern>指定了要搜索的文件集，而<directories>则指定了< pattern>的文件集的搜索的目录。例如：
+
+vpath %.h ../headers
+#该语句表示，要求make在“../headers”目录下搜索所有以 .h 结尾的文件。（如果某文件在当前目录没有找到的话）
+
+
+多目标
+#看一个例子吧。
+
+bigoutput littleoutput : text.g
+    generate text.g -$(subst output,,$@) > $@
+#上述规则等价于：
+
+bigoutput : text.g
+    generate text.g -big > bigoutput
+littleoutput : text.g
+    generate text.g -little > littleoutput
+#其中， -$(subst output,,$@) 中的 $ 表示执行一个Makefile的函数，函数名为subst，后面的为参数。关于函数，将在后面讲述。这里的这个函数是替换字符串的意思， $@ 表示目标的集合，就像一个数组， $@ 依次取出目标，并执于命令。
+
+
+
+静态模式
+#静态模式可以更加容易地定义多目标的规则，可以让我们的规则变得更加的有弹性和灵活。我们还是先来看一下语法：
+
+<targets ...> : <target-pattern> : <prereq-patterns ...>
+    <commands>
+    ...
+
+#如果我们的<target-pattern>定义成 %.o ，意思是我们的<target>;集合中都是以 .o 结尾的，而如果我们的<prereq-patterns>定义成 %.c ，意思是对<target-pattern>所形成的目标集进行二次定义，其计算方法是，取<target-pattern>模式中的 % （也就是去掉了 .o 这个结尾），并为其加上 .c 这个结尾，形成的新集合。
+
+objects = foo.o bar.o
+all: $(objects)
+$(objects): %.o: %.c
+    $(CC) -c $(CFLAGS) $< -o $@
+#上面的例子中，指明了我们的目标从$object中获取， %.o 表明要所有以 .o 结尾的目标，也就是 foo.o bar.o ，也就是变量 $object 集合的模式，而依赖模式 %.c 则取模式 %.o 的 % ，也就是 foo bar ，并为其加下 .c 的后缀，于是，我们的依赖目标就是 foo.c bar.c 。而命令中的 $< 和 $@ 则是自动化变量， $< 表示第一个依赖文件， $@ 表示目标集（也就是“foo.o bar.o”）。于是，上面的规则展开后等价于下面的规则：
+
+#例子
+foo.o : foo.c
+    $(CC) -c $(CFLAGS) foo.c -o foo.o
+bar.o : bar.c
+    $(CC) -c $(CFLAGS) bar.c -o bar.o
+files = foo.elc bar.o lose.o
+$(filter %.o,$(files)): %.o: %.c
+    $(CC) -c $(CFLAGS) $< -o $@
+$(filter %.elc,$(files)): %.elc: %.el
+    emacs -f batch-byte-compile $<
+#$(filter %.o,$(files))表示调用Makefile的filter函数，过滤“$files”集，只要其中模式为“%.o”的内容
+
+
+自动生成依赖
+#我们可以使用C/C++编译的一个功能。大多数的C/C++编译器都支持一个“-M”的选项，即自动找寻源文件中包含的头文件，并生成一个依赖关系。例如，如果我们执行下面的命令:
+
+cc -M main.c
+#其输出是：
+
+main.o : main.c defs.h
+#于是由编译器自动生成的依赖关系，这样一来，你就不必再手动书写若干文件的依赖关系，而由编译器自动生成了。需要提醒一句的是，如果你使用GNU的C/C++编译器，你得用 -MM 参数，不然， -M 参数会把一些标准库的头文件也包含进来。
+#gcc -MM main.c的输出则是:
+main.o: main.c defs.h
+
+使用变量
+例子
+
+A = $(B)
+B = $(A)
+#这会让make陷入无限的变量展开过程中去，当然，我们的make是有能力检测这样的定义，并会报错。还有就是如果在变量中使用函数，那么，这种方式会让我们的make运行时非常慢，更糟糕的是，他会使用得两个make的函数“wildcard”和“shell”发生不可预知的错误。因为你不会知道这两个函数会被调用多少次。
+#为了避免上面的这种方法，我们可以使用make中的另一种用变量来定义变量的方法。这种方法使用的是 := 操作符，如：
+
+x := foo
+y := $(x) bar
+x := later
+#其等价于：
+
+y := foo bar
+x := later
+#值得一提的是，这种方法，前面的变量不能使用后面的变量，只能使用前面已定义好了的变量。如果是这样：
+
+y := $(x) bar
+x := foo
+#那么，y的值是“bar”，而不是“foo bar”。
+
+变量的替换
+#我们可以替换变量中的共有的部分，其格式是 $(var:a=b) 或是 ${var:a=b} ，其意思是，把变量“var”中所有以“a”字串“结尾”的“a”替换成“b”字串。这里的“结尾”意思是“空格”或是“结束符”。
+
+#还是看一个示例吧：
+
+foo := a.o b.o c.o
+bar := $(foo:.o=.c)
+#这个示例中，我们先定义了一个 $(foo) 变量，而第二行的意思是把 $(foo) 中所有以 .o 字串“结尾”全部替换成 .c ，所以我们的 $(bar) 的值就是“a.c b.c c.c”。
+
+
+
+
+
+
+
+
+

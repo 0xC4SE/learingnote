@@ -1,0 +1,42 @@
+>>>from pwn import *
+>>>l = listen()
+>>>r = remote('localhost',l.lport)
+>>>c = l.wait_for_connection()
+>>>r.send('hello\n')
+>>>c.recv()
+>>>r.sendline('hello')
+>>>c.recvline()
+
+#context模块
+>>>context.clear()      #恢复默认值
+>>>context.os = 'linux'
+>>>context.arch = 'arm'
+>>>context.bits = 32
+>>>context.endian = 'little'
+>>>vars(context)
+>>>context.update(os='linux',arch='amd64',bits=64)  #更新
+>>>context.log_level = 'debug'                  #debug模式
+>>>context.log_file = '/tmp/pwnlog.txt'         #日志文件
+
+
+#ELF模块
+常用函数
+asm(address,assembl)：汇编指令assembly并将其插入ELF的address地址处，需要使用ELF.save()函数来保存
+bss(offset)：返回.bss段加上offset后的地址
+checksec()：查看文件开启的保护
+disable_nx()：关闭NX保护
+disasm(address,n_bytes)：返回对地址address反汇编n字节的字符串
+offset_to_vaddr(offset)：将偏移offset转换为虚拟地址
+vaddr_to_offset(address)：将虚拟地址address转换为文件偏移
+read(address,count)：从虚拟地址address读取count个字节的数据
+write(address,data)：在虚拟地址address写入data
+section(name)：获取name段的数据
+debug()：使用gdb.debug()进行调试
+>>>core = Corefile('./core-a.out-xxxx')        #调试core文件
+>>>core.registers                           #python2语法，python3可能不对
+>>>print(core.maps)
+>>>print(hex(core.fault_addr))
+>>>print(hex(core.pc))
+>>>print(core.libc)
+
+

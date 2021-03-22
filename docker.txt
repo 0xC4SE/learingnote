@@ -1,0 +1,152 @@
+Docker的出现
+    项目的使用在不同电脑上不可用
+    Docker的思想来自于集装箱,打包装箱，每个箱子是相互隔离的。
+    容器化技术并不是一个完整的操作系统
+    容器内的应用直接运行在宿主机的内容，容器时没有自己的内核的
+Docker安装
+    Docker的基本组成:客户端，服务器，仓库
+    镜像:Docker镜像好比时一个模板，可以通过这个模板来创建容器服务
+    容器:Docker的容器技术，独立运行一个或者一个组应用，通过镜像来创建的,这个容器可以理解为一个简易的linux系统
+    仓库:仓库就是存放镜像的地方,仓库分为公有仓库和私有仓库,Docker hub(国外),阿里云(配置镜像服务器)
+    1.环境准备
+   
+  卸载旧的docker
+     sudo apt-get remove docker docker-engine docker.io containerd runciokkkkkkkkiii
+  安装包
+    sudo apt-get update
+    sudo apt-get install \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+    添加Docker官方GPG key
+    sudo curl -fsSL https://mirrors.aliyun.com/docker-ce/linux/ubuntu/gpg | apt-key add -
+    sudo apt-key fingerprint 0EBFCD88
+  正常输出为：
+    pub   rsa4096 2017-02-22 [SCEA]
+    9DC8 5822 9FC7 DD38 854A  E2D8 8D81 803C 0EBF CD88
+    uid     [ unknown] Docker Release (CE deb) <docker@docker.com>
+    sub   rsa4096 2017-02-22 [S]
+  添加稳定版repository
+    sudo add-apt-repository \
+        "deb [arch=amd64] https://mirrors.aliyun.com/docker-ce/linux/ubuntu \
+        $(lsb_release -cs) \
+        stable"
+  更新仓库
+    sudo apt-get update
+  安装最新版的Docker ce和containerd
+    sudo apt-get install docker-ce docker-ce-cli containerd.io
+    启动Docker
+    apt-cache madison docker-ce
+  验证Docker --version
+    sudo docker run hello-world
+  将非root用户加入docker组，以允许免sudo执行docker
+
+    sudo gpasswd -a 用户名 docker
+  重启服务并刷新docker组成员
+
+    sudo service docker restart
+    newgrp - docker
+  设置开机自启动并启动 Docker-ce（安装成功后默认已设置并启动，可忽略）
+
+    sudo systemctl enable docker
+    sudo systemctl start docker
+  安装docker-compose
+
+    https://www.runoob.com/docker/docker-compose.html
+
+    sudo curl -L https://github.com/docker/compose/releases/download/1.25.4/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
+
+    sudo chmod +x /usr/local/bin/docker-compose
+
+    sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+
+    docker-compose --version
+
+
+Docker命令
+    $docker images          #查看镜像
+    $docker info            #docker信息
+    $docker cmd --help      #docker帮助命令
+  镜像命令
+    $docker search xxx      #搜索镜像仓库 
+    $docker pull  xxx:5.x   #下载镜像
+    $docker rmi -f ID/name  #删除指定的容器
+  容器命令
+    $docker pull centos
+    $docker run [参数] image
+        --name="name"       #容器名字
+        -d                  #后台方式运行
+        -it                 #使用交互方式运行
+        -p                  #指定容器的端口
+            -p ip:port
+            -p port 
+            port
+        -P                  #随机的端口
+    $docker run -it centos /bin/bash    #启动并进入容器
+    $exit                   #退出镜像容器,直接停止
+    $docker ps              #查看运行的容器
+        -a  -n=1            #查看历史运行的刚创建容器
+        -q                  #只显示容器的编号
+    $ctrl + p + q           #退出容器，容器并且不停止
+    $docker rm 容器id       #删除指定的容器，不能删除运行的容器
+  启动和停止容器的操作
+    $docker start 容器id    #启动容器
+    $docker restart 容器id  #重启容器
+    $docker stop 容器id     #停止正在运行的容器
+    $docker kill 容器id     #强制停止容器
+  常用的其他命令
+    $docker run -d centos   #后台方式运行容器
+   #常见的坑，docker使用后台运行，就必须要有一个前台进程,docker就会停止
+  查看日志
+    $docker logs -ft --tail 10 容器id   #显示日志信息
+  查看容器中的进程信息
+    $docker top 容器id      #查看容器进程信息
+    $docker inspect 容器id  #查看容器的元数据
+  进入当前正在运行的容器
+    $docker exec -it 容器id /bin/bash   #进入容器后进入新终端
+    $docker attach 容器id   #进入时正在执行代码的终端
+  从容器拷贝到主机
+    $docker cp 容器id:容器内路径 主机路径
+
+docker安装nginx
+docker search nginx #搜索镜像
+docker pull nginx   #下载镜像
+docker images       #查看是否下载nginx
+docker run -d --name nginx01 -p 3344:80 nginx   #启动容器
+#--name 给容器命名 ;-p linux端口:容器端口
+docker ps           #查看启动的容器
+curl localhost:3344 #本机链接测试
+docker exec -it nginx01 /bin/bash
+
+docker安装tomcat
+docker pull tomcat
+docker images
+docker run -d -p 3355:8080 --name tomcat01 tomcat   #后台方式运行
+docker exec -it tomcat01 /bin/bash      #进入容器看一下
+要是我们能够在linux主机访问容器内部可以修改并同步到内部就好了
+
+
+    
+
+
+Docker镜像
+
+容器数据卷
+
+DockerFile
+
+Docker网络原理
+
+IDEA整合Docker
+
+Docker Compose
+
+Docker Swarm
+
+CI\CD Jenkins
+
+
+
+

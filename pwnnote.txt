@@ -1,0 +1,242 @@
+栈溢出思路：
+1.通过栈溢出覆盖返回地址，从而执行ROP，利用puts()函数泄露libc的地址，然后用read()将one_gadget读到.bss段，利用stack pivot将栈转移过去，最后"leave;ret"的组合将RIP赋值为one-gadget,从而获得shell
+
+文件描述符:是内核为管理已打开文件所创建的索引，使用一个非负整数来指被打开的文件.
+0:标准输入，stdin
+1:标准输出，stdout
+2:标准错误，stderr
+
+所有用户的信息都保存在/etc/passwd文件中，加密过的用户密码则保存在/etc/shadow文件中,root权限才可访问.
+
+环境变量相当于给系统或应用程序设置一些参数，例如共享库的位置，命令行的参数等信息，对于程序的运行十分重要.环境变量字符串以“name”="value"这样的形式存在，大多数name由大写字母加下划线组成，通常把name部分称为环境变量名，value部分称为环境变量的值,其中value需要以'/0'结尾。
+Linux环境变量的分类方法:
+(1)按照生命周期划分
+*永久环境变量:修改相关配置文件,永久生效.
+*临时环境变量:通过export命令在当前终端下声明，关闭终端后失效.
+(2)按照作用域划分
+*系统环境变量:对系统中所有用户生效,可以在"/etc/profile"文件中声明
+*用户环境变量:对特定用户生效,可以在'~/.bashrc'文件中声明
+使用命令env可以打印出所有的环境变量,也可以对环境变量进行设置.
+LD_PRELOAD环境变量可以定义程序运行时优先加载的动态链接库。LD_PRELOAD=~/libc-2.2x.so ldd ./test
+
+environ:libc中定义的全局变量environ指向内存中的环境变量表,该表就在栈上，因此通过泄露environ指针的地址，即可获得栈的地址.
+pwndbg$vmmap libc
+pwndbg$shell nm -D /lib/x86_x64-linux-gnu/libc-2.23.so | grep environ
+pwndbg$x/gx 0x7ffffxxxxxx+0x3cxxxxx
+pwndbg$x/4gx 0x7ffffxxxxx1
+pwndbg$x/8s 0x7ffffxxxxx2
+
+procfs文件系统:procfs文件系统时linux内核提供的虚拟文件系统，为访问内核数据提供接口。它只占用内存而不占用存储。用户可以通过procfs查看相关系统硬件及当前正在运行的进程的信息，甚至可以通过修改其中的某些内容来改变内核的运行状态.
+每个正在运行的进程都对应/proc下的一个目录，目录名就是进程PID
+$ps -ef | grep "cat -"
+$ls -lG /proc/xxxx/
+$cat /proc/35035/maps
+$sudo cat /proc/35035/stack
+$LD_SHOW_AUXV=1 cat -
+AT_SYSINFO_EHDR: 0x7ffc10cd5000         #该值是VDSO的地址
+AT_HWCAP:        f8bfbff
+AT_PAGESZ:       4096
+AT_CLKTCK:       100
+AT_PHDR:         0x558dc1ab5040
+AT_PHENT:        56
+AT_PHNUM:        9
+AT_BASE:         0x7ffb4ffcd000
+AT_FLAGS:        0x0
+AT_ENTRY:        0x558dc1ab7710
+AT_UID:          1000
+AT_EUID:         1000
+AT_GID:          1000
+AT_EGID:         1000
+AT_SECURE:       0
+AT_RANDOM:       0x7ffc10c27009
+AT_HWCAP2:       0x0
+AT_EXECFN:       /bin/cat
+AT_PLATFORM:     x86_64
+$ls -l /proc/35035/fd
+$strings /proc/35035/environ
+$sudo cat /proc/35035/syscall           #第一个值是系统调用号，后面跟着六个参数，最后俩个值分别是堆栈指针和指令计数器
+
+调用约定
+(1)内核接口
+*x86-32系统调用约定：linux系统调用使用寄存器传递参数，eax为syscall_number,ebx,ecx,edx,esi和ebp用于将6个参数传递给系统调用.返回值存放在eax中。所有其他寄存器保存在int 0x80中。
+*x86-64系统调用约定:内核接口使用的寄存器由rdi,rsi,rdx,r10,r8,r9,系统调用通过syscall指令完成。除了rcx,r11和rax，其他的寄存器都被保存。系统调用的编号必须在寄存器rax中传递。系统调用的参数限制为6个，不直接从堆栈上传递任何参数。返回时，rax包含了系统调用的结果，而且只有INTERGER和MEMORY类型的值才会被传递给内核.
+(2)用户接口
+*x86-32函数调用约定：参数通过栈进行传递，最后一个参数第一个被放入栈中，直到所有的参数都放置完毕，然后执行call指令.
+*x86-64函数调用约定：x86-64下通过寄存器传递参数，这样做比通过栈具有更高的效率。它避免了内存中参数的存取和额外的指令，根据参数类型的不同，会使用寄存器传参方式.如果参数的类型时MEMORY，则在栈上传递参数。如果类型是INTERGER，则顺序是rdi,rsi,rdx,rcx,r8和r9,如果参数多于6个的INTERGER参数，则后面的参数在栈上传递。
+
+cordump:程序发生终止或异常崩溃时，系统就会将程序崩溃时的内存，寄存器状态，堆栈指针，内存管理信息等记录下来，保存在一个文件中
+SIGQUIT     core    通过键盘退出时
+SIGILL      core    遇到不合格指令时
+SIGABRT     core    从abort中产生的信号
+SIGSEGV     core    无效的内存访问
+SIGTRAP     core    trace/breakpoint陷阱
+开启核心转储并修改转储文件的保存路径
+$ulimit -c          #默认关闭
+$ulimit -c unlimited#临时开启
+$cat /etc/security/limits.conf      #将value 0 改为unlimited，永久开启
+$echo 1 /proc/sys/kernel/core_uses_pid      #修改coreusespid，使核心转储文件名变为core.[pid]
+$echo /tmp/core-%e-%p-%t > /proc/sys/kernel/core_patttern   #修改corepattern，保存到/tmp目录下，文件名为core-[filename]-[pid]-
+
+系统调用：早期2.6及更早的内核都使用软中断int 0x80进行系统调用，在往后的内核中被快速系统调用指令替代，32位操作系统使用sysenter(对应sysexit),64位系统则使用syscall(对应sysret)指令.
+sysenter指令，需要为其手动布置栈，这是因为在sysenter返回时，会执行__kernel_vsyscall的后半部分(从0xf7fd5059开始).__kernel_vsyscall封装了sysenter调用的规范，是vDSO的一部分，而vDSO允许程序在用户层中执行内核代码。
+
+canary:通常可以微分三类：terminator(将地位字符串设置为"\x00"),random(程序初始化时随机生成，随机数由/dev/urandom生成)和random XOR(与random类似，但多了一个XOR操作)
+-fstack-protector 对alloca系列函数和内部缓冲区大于8字节的函数启用保护
+-fstack-protector-strong 增加包含局部数组定义和地址引用的函数的保护
+-fstack-protector-all 对所有函数启用保护
+-fstack-protector-explicit 对包含stack_protect属性的函数启用保护
+-fno-stack-protector 禁用保护
+linux中，fs寄存器被用于存放在线程局部存储(Thread Local Storage),TlS主要是为了避免多个线程同时访问同一全局变量或者静态变量时所导致的冲突,TLS为每一个使用该全局变量的线程都提供一个变量值的副本，每一个线程均可以独立地改变自己的副本，而不会和其他线程的副本冲突。在glibc的实现力，TLS结构体tcbhead_t中，偏移为0x28地方正是stack_guard,如果是32位程序，那么canary就变成了gs寄存器偏移0x14的地方。
+$readelf -s test | grep "__stack_chk_fail"       #即可查看程序有无canary保护
+绕过canary:第一种将canary的值泄露出来，然后在栈溢出时覆盖上去，使其保持不变；第二种则是同时修改TLS和栈上的canary，这样就能绕过
+
+no-execute:windows中成为DEP保护:表示不可执行，其原理是将数据所在的内存页(例如堆和栈)标识为不可执行，如果程序产生溢出转入执行shellcode时，cpu会抛出异常。
+NX保护并不能阻止通过代码重用来进行攻击(ret2libc)
+$gcc -z execstack test.c             开启nx保护,ubuntu默认已经开启nv保护
+$gcc -z noexecstack test.c           关闭nx保护
+$readelf -W -l test | grep "GNU_STACK"           #即可查看程序有无NX保护
+绕过NX保护:只能使用程序自有的代码进行重放攻击，例如ret2libc，改变程序执行流到libc中的system("/bin/sh").在关闭aslr的情况下，libc的地址是固定的，system()和"/bin/sh"相对于基地址的偏移也是固定的，所以直接硬编码到exp里。
+
+aslr:地址随机化保护
+$echo 0 > /proc/sys/kernel/randomize_va_space       关闭地址随机化
+$echo 1 > /proc/sys/kernel/randomize_va_space       stack,shared libraries随机化(mmap的基地址,stack和vdso页面随机化)
+$echo 2 > /proc/sys/kernel/randomize_va_space       heap,stack,shared libraries随机化(增加heap的随机化)
+$如果加上pie保护                                    可执行程序,plt,heap,stack,shared libraries随机化
+绕过aslr:例如ret2plt，GOT劫持，地址爆破等
+
+
+pie和pic的区别:pie是位置无关程序，pic是位置无关代码，一般pie为保护，pic用于动态链接共享库
+-fpic                   为共享库生成位置无关代码
+-pie                    生成动态链接的位置无关可执行文件，通常需要指定-fpie
+-no-pie                 不生成动态链接的位置无关可执行文件
+-fpie                   类似于-fpic，但生成的位置无关代码只能用于可执行文件,通常需要指定-pie
+-fno-pie                不生成位置无关代码
+$readelf -h test | grep "*DYN";readelf -d test 是共享文件，有DEBUG条目,则是pie保护,否则没有
+
+
+fortify_source:它会将危险函数替换为安全函数(例如，memcpy，puts函数等),ubuntu16.04默认关闭保护
+$gcc -O1 -D_FORIFY_SOURCE=1时，开启缓冲区溢出攻击检查
+$gcc -O1 -D_FORIFY_SOURCE=2时，开启缓冲区溢出以及格式化字符串攻击检查
+$可以根据函数名是否带有"__chk"后缀来判断是否开启FORTIFY_SOURCE
+绕过fortify_source:利用整数溢出，将位于栈上的_IO_FILE结构中的_IO_FLAGS2_FORTIFY篡改为0，从而关闭FORTIFY_SOURCE对%n的检查，然后利用任意地址写，将nargs篡改为0，从而关闭对%N$的检查
+
+relro:将符号重定向表设置为只读，或者在程序启动时就解析并绑定所有动态符号，从而避免GOT上的地址被篡改
+relro有俩种形式：
+*partial relro:一些段(包括.dynamic,.got等)在初始化时将会被标记为只读。
+*full relro:除了partial relro，延迟绑定将会被禁止，所有的导入符号将会在开始时被解析，.got.plt段将会被完全初始化为目标函数的最终地址，并被mprotect标记为只读，但其实.got.plt将会直接被合并到.got，也就看不到这个段了。另外link_map和_dl_runtime_resolve的地址也不会被装入。
+$gcc -z norelro test.c              #关闭relro
+$gcc -z relro test.c                #开启relro
+$可以通过程序头"GNU_RELRO"来判断是否开启RELRO($readelf -l),通过动态段表的"BIND_NOW"判断是partial还是full($readelf -d)
+没有relro时,有延迟绑定，第一调用call指令会跳转到printf@plt,然后jmp到对应的.got.plt(我们说的GOT表),在跳回来进行符号绑定，完成后.got.plt项才被修改为真正的函数地址
+开启relro后,没有延迟绑定时，所有的解析工作在程序加载时完成,执行完call指令跳到相对应的.plt.got项，然后jmp到像对应的.got项，这里已经保存了解析好的函数地址.
+
+
+accept()：接收socket连线
+int accept(int s, struct sockaddr * addr, int * addrlen);
+函数说明：accept()用来接受参数s 的socket 连线. 参数s 的socket 必需先经bind()、listen()函数处理过, 当有连线进来时accept()会返回一个新的socket 处理代码, 往后的数据传送与读取就是经由新的socket处理, 而原来参数s 的socket 能继续使用accept()来接受新的连线要求. 连线成功时, 参数addr 所指的结构会被系统填入远程主机的地址数据, 参数addrlen 为scokaddr 的结构长度. 关于机构sockaddr 的定义请参考bind().
+返回值：成功则返回新的socket 处理代码, 失败返回-1, 错误原因存于errno 中.
+
+recv()：接收对方发送当数据
+ssize_t recv(int sockfd, void *buf, size_t len, int flags);
+函数功能：接收对方发送当数据
+可以同样使用recvfrom函数来接收数据
+ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,struct sockaddr *src_addr, socklen_t *addrlen);
+当recvfrom函数的最后两个参数写为NULL和0的时候与recv的功能完全一样
+返回值：成功返回发送的字节数；失败返回-1，同时errno被设置
+函数参数:
+a. sockfd 通信文件描述符
+b. buf 应用缓存，用于存放要发送到数据
+可以是任何类型：结构体，int , char,float，字符串
+c. len buf的大小
+d. flags 一般设置为0，此时send为阻塞式发送
+即发送不成功会一直阻塞，直到被某个信号终端终止，或者直到发送成功为止。
+指定MSG_NOSIGNAL，表示当连接被关闭时不会产生SIGPIPE信号
+指定MSG_DONTWAIT 表示非阻塞发送
+指定MSG_OOB 表示带外数据
+
+cflow:查看源码中函数的调用链
+$cflow -T -m main -n test.c      #以树状图形式查看c源码中的函数调用
+
+
+编译debug版本的glibc
+$gie clone https://sourceware.org/git/glibc.git && cd glibc
+$git checkout glibc-2.26
+编译64位
+$mkdir build && cd build 
+$../configure --prefix=/usr/local/glibc-2.26 --enable-debug=yes
+$make -j4 && sudo make install
+
+编译32位
+$make build_32 && cd build_32
+$../configure --prefix=/usr/local/glibc-2.26_32 --enable-debug=yes --host=i686-linux-gnu --build=i686-linux-gnu CC="gcc -m32" CXX="g++ -m32" CFLAGS="-O2 -march=i686" CXXFLAGS="-O2 -march=i686"
+$make -j4 && sudo make install 
+
+使用指定libc编译原代码
+$gcc -L/usr/local/glibc-2.26/lib -Wl,--rpath=/usr/local/glibc-2.26/lib -Wl,-I/usr/local/glibc-2.26/lib/ld-2.26.so test.c -o test
+
+如何使用指定libc运行其他已编译的程序
+一种方法是:
+$/usr/local/glibc-2.26/lib/ld-2.26.so ./test
+另一种修改二进制文件的解释器路径:这里我们使用pathelf
+$patchelf --set-interpreter ~/lib/2.23-0ubuntu3_i386/ld-2.23.so ./ret2libc3
+$patchelf --replace-needed libc.so.6 ~/lib/2.23-0ubuntu3_i386/libc-2.23.so ./ret2libc3
+
+
+docker：
+$curl -s https://git.docker.com/ | sh           #按装
+$service docker start                           #启用
+$sudo usermod -aG docker case                   #添加用户组
+$docker version 
+$docker image pull library/hello-world          #抓取镜像文件
+$docker image ls                                #查看本地镜像问价
+$docker run hello-world                         #生成容器并运行,该容器输出信息后自动终止
+$docker run -it ubuntu /bin/bash                #启动一个不会自动终止的ubuntu容器
+$#ctrl+p+q                                      #退出控制台，容器保持后台运行
+$docker container ls                            #列出正在运行的容器
+$docker container stop xxx
+$docker container rm xxx                        #停止和删除容器
+
+pwn题目部署
+$socat tcp4-listen:10001,reuseaddr,fork exec:./pwnable &
+#如果部署大型的比赛同时连入大量用户，可能会导致服务器资源紧张，且权限隔离也有问题
+#因此，我们使用docker和ctf_xinetd来进行部署，先clone该项目
+$git clone https://github.com/Eadom/ctf_xinetd.git
+$cd ctf_xinetd/ && cat ctf.xinetd
+#将pwn的二进制文件放在bin目录下，并修改flag为该题目的flag字符串。然后修改配置文件ctf.xinetd，比较重要的是端口port和参数server_args，修改helloworld为二进制文件名。然后用build命令创建镜像。
+$dcoker build -t "helloworld"
+$docker image ls
+#启动容器，命令中的三个helloworld分别代表host name,container name和image name。此时用户就可以通过端口10001连接到该题目
+$docker run -d -p "0.0.0.0:10001:9999" -h "helloworld" --name="helloworld" helloworld
+$docker ps
+#运维人员如果想抓取该pwn题运行时的网络流量便于查复和监控作弊，可以
+$tcpdump -w pwn1.pcap -i eth0 port 10001
+
+ida
+#ida目录下的各个文件对于使用其高级功能很有帮助
+*cfg:包含各种配置文件，包括ida基础配置文件ida.cfg，GUI配置文件idagui.cfg和文本模式用户界面配置文件idatui.cfg
+*dbgsrv:包含远程调试的server端,包括android,macos,windows,linux等操作系统以及不同架构的调试器
+*idc:包括了ida内置脚本语言idc所需的核心文件
+*ids:包括了一些符号文件，这些文件用户描述可被加载到ida的二进制文件引用的共享库的内容.这些ids文件包含摘要信息，其中列出了由某一个指定库导出的所有项目。这些项目包含了描述某个函数所需的参数类型和数量的信息，函数的返回类型以及与该函数调用约定有关的信息
+*loaders:包含在文件加载过程中用于识别和解析PE/ELF等已知文件格式的IDA拓展
+*platforms:包含QT的一个运行时库qwindows.dll
+*plugins:插件安装目录
+*procs:包含所支持的处理器模块，提供了从机器语言到汇编语言的转换能力，并负责生成ida用户界面中显示的汇编代码
+*python:支持64位的python，包含了idapython相关的库文件
+*sig:包含各种模式匹配操作中利用的签名。通过模式匹配，ida能够将代码序列确定为已知的库代码，从而节省大量的分析时间
+*til:包含一些类型库信息，记录了特定编译器库的数据结构
+
+gdb
+#gdb参数
+*x/nfu <addr>:查看内存
+    .n:重复次数
+    .f:显示格式(默认是x),显示格式是print('x','d','u','o','t','a','c','f','s')，还有i(机器指令)
+    .u:单位大小，b表示单字节，h表示双字节，w表示四字节，g表示八字节
+
+dd
+#可以替换二进制文件内容
+$dd if=/dev/zero of=output_file bs=1k count=1       #if和of分别指定文件输入和输出以代替标准输入和输出，bs指定读入或写入块的大小，以字节为单位，count指定复制的块数，skip和seek分别用于指定读入或写入的位置,conv则指定转换选项
+#patch二进制文件，将aaaa替换为bbbb
+$strings -t d  a.out | grep "AAAA"
+$printf "BBBB" | dd of=a.out bs=1 seek=1745 conv=notrunc
+
+
