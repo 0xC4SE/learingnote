@@ -1,0 +1,77 @@
+Fuzz结果分析和代码覆盖率
+1. 工作状态
+afl-fuzz永远不会停止，所以何时停止测试很多时候就是依靠afl-fuzz提供的状态来决定的。具体的几种方式如下所示:
+    状态窗口的cycles done变为绿色;
+    afl-whatsup查看afl-fuzz状态;
+    afl-stat得到类似于afl-whatsup的输出结果;
+    定制afl-whatsup->在所有代码外面加个循环就好;
+    用afl-plot绘制各种状态指标的直观变化趋势;
+    pythia估算发现新crash和path概率。
+2. fuzz结束判断
+    状态窗口中”cycles done”字段颜色变为绿色该字段的颜色可以作为何时停止测试的参考;
+    距上一次发现新路径（或者崩溃）已经过去很长时间了，至于具体多少时间还是需要自己把握;
+    目标程序的代码几乎被测试用例完全覆盖，这种情况好像很少见;
+    pythia提供的各种数据中，path covera达到99或者correctness的值达到1e-08(含义: 从上次发现path/uniq crash到下一次发现之间大约需要1亿次执行)
+3. 输出结果说明
+    queue：存放所有具有独特执行路径的测试用例。
+    crashes：导致目标接收致命signal而崩溃的独特测试用例。
+    crashes/README.txt：保存了目标执行这些crash文件的命令行参数。
+    hangs：导致目标超时的独特测试用例。
+    fuzzer_stats：afl-fuzz的运行状态。
+    plot_data：用于afl-plot绘图。
+4. 对crash结果的简单分析和分类
+    1.crash exploration mode
+    afl-fuzz的一种运行模式，也称为peruvian rabbit mode，用于确定bug的可利用性，其输入的是crash的信息，之后使用-C启用这种模式，afl会自动探索并创造与之相关的crash来帮助你进行分析，比如判断能够控制某块内存地址的长度。
+        afl-fuzz -m none -C -i ./fuzz_out/crashes -o ./peruvian-were-rabbit_out -- ./vuln -f
+    2.triage_crashes.sh
+    AFL源码的experimental目录中有一个名为triage_crashes.sh的脚本，可以帮助我们触发收集到的crashes。
+直接使用脚本跟参数的话，我们可以看到相关crash情况的寄存器等信息，但是如果只是大致分类的话，可以使用如下命令    
+    /root/Desktop/fuzz/afl/experimental/crash_triage/triage_crashes.sh ./fuzz_out ./vuln 2>&1 | grep SIGNAL
+    如下，11代表了SIGSEGV信号，有可能是因为缓冲区溢出导致进程引用了无效的内存
+    3.crashwalk
+    优点:可以显示更为详细的信息
+    项目地址: https://github.com/bnagy/crashwalk
+        # 手动模式
+        ~/go/bin/cwtriage -root ./fuzz_out/crashes -match id -- ./vuln -f
+        # afl自动化模式
+        ~/go/bin/cwtriage -root ./fuzz_out/crashes -afl
+    4.afl-collect
+    项目地址: https://github.com/rc0r/afl-utils
+    afl-collect基于exploitable来检查crashes的可利用性。它可以自动删除无效的crash样本、删除重复样本以及自动化样本分类。
+        afl-collect -j 8 -d crashes.db -e gdb_script ./fuzz_out ./fuzz_in --  ./vuln --target-opts
+
+
+5. 代码覆盖率
+afl-cov的使用说明如下:
+首先使用gcov重新编译源码
+    gcc -fprofile-arcs -ftest-coverage vuln.c -o vuln_cov
+如果遇到需要make进行编译的文件，执行如下:
+    $ make clean
+    $ ./configure --prefix=/root/tiff-4.0.10/build-cov CC="gcc" CXX="g++" CFLAGS="-fprofile-arcs -ftest-coverage" --disable-shared
+    $ make
+    $ make install
+之后使用afl-cov来计算覆盖率
+    afl-cov -d ./fuzz_out --live --enable-branch-coverage -c . -e "cat AFL_FILE | ./vuln_cov AFL_FILE"
+同时进行对插桩过的vuln的fuzz
+    afl-fuzz -i ./fuzz_in -o ./fuzz_out ./vuln -f
+生成的报告会保存在/path/to/afl-fuzz-output/cov/web/lcov-web-final路径下。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

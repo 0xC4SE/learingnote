@@ -1,0 +1,61 @@
+
+compton 透明
+
+ranger :文件管理器
+fuzzfilefinder :ctrl f
+shift s  :以当前文件为目录自动进入termial
+ranger.config :配置快捷键  ranger --copy-config=rc :设置配置文件
+vim ~/.config/ranger/rc.config
+rc.config配置
+#basic
+map q quit
+map Q quitall
+map : console
+map V console shell vim%space
+
+map <Space> mark_files toggle=true
+
+#jumping around
+map H history_go -l
+map L history_go 1
+
+map gh cd ~
+map gi cd ~/Github
+map gd cd ~/Desktop
+map gf cd ~/.config
+#exteral programs
+map I edit
+map du shell -p du --max-depth=1 -h --apparent-size
+map dU shell -p du --max-depth=1 -h --apparent-size | sort -rh
+map yp yank path
+map yd yank dir
+#ranger快捷键和vim差不多
+<F7> 创建文件夹
+cw :change word 重名文件夹
+yy :copy  复制文件
+pp :paste 粘贴文件
+dd :剪切
+dD :删除文件夹
+<space> :多选
+v :全部选中文件
+vv :取消全部选中
+:bulkrename :在文件被选中状态下把名字复制到vim,然后修改文件名
+zh :显示隐藏文件
+o<somekey> :按什么排序
+/i3 :/+内容是搜索内容
+/ra<tab> :自动跳到补全的文件夹
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

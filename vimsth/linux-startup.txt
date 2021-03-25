@@ -1,0 +1,155 @@
+
+manjaro
+rufus 安装模式是DD模式下安装 不这么安装会出现文件系统格式错误
+sudo nano /etc/pacman.conf
+[archlinuxcn]
+SigLevel = Never
+Server = https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/$arch
+sudo pacman-mirrors -i -c China -m rank
+
+sudo pacman -S archlinuxcn-keyring
+
+sudo pacman -c China
+sudo pacman -Syyu   #强迫更新
+#录屏软件
+sudo pacman -S simplescreenrecorder
+#捕捉打字
+sudo pacman -S screenkey
+#编辑器
+sudo pacman -S vim
+
+#pacman的配置文件
+sudo -E vim /etc/pacman.conf    #color去掉注释
+
+#fish
+sudo pacman -S fish
+#切换fish 安装前要按照python
+which fish
+chsh -s /usr/bin/fish
+curl -L https://get.oh-my.fish | fish
+fish_config
+#alias
+alias c clear #但这样是不会保存的
+funcsave c #下回就会保存
+
+alias l "ls -la"
+
+sudo -E #保存在自己用户下的配置
+alias sudo "sudo -E"
+
+#i3
+sudo pacman -S i3 #登录界面选i3
+回车 回车
+win+回车 #启动终端
+vim ~/.Xresource
+Xft.dpi: 200
+#i3进入各个桌面的方式是win+12345
+win + 回车会再打开一个终端
+win + f会改变俩个终端的水平竖直显示方式
+win + f进入终端全屏
+win + v win + 回车水平加入一个终端
+win + hjkl 几个窗口间切换
+
+#设置终端字体
+sudo pacman -S alacritty #换一个终端
+
+sudo pacman -S dmenu
+win + d #会出现dmenu
+
+#win+回车要想打开新安装的终端
+vim ~/.config/i3/config
+binsym #mod+Return exec alacritty   #alacritty在xface中字体会出现问题
+sudo pacman -S wqy-bitmapfont
+sudo pacman -S wqy-zenhei   #更换一下字体
+win + shift + r 是重启i3 win + shift +c 是x重新加载配置文件
+
+#配置alacritty
+vim .config/alacritty/alacritty.yml
+
+
+
+#修改键位
+pacman -S xorg  #xorg可以修改你电脑的硬件配置
+xmodmap #查看当前键位的设置
+xmodmap -pke #会输出当前电脑的所有键位的代号
+xmodmap -pke > ~/.xmodmap
+vim .xmodmap
+#这时新打开一个terminal 
+xev
+axmodmap ~/.xmodmap     #刷新一下键位设置
+
+#配置一下i3的快捷键
+vim ~/.config/i3/config
+binsym $mode+c exec firefox --no-startup-id
+exec_always sleep 1;xmodmap ~/.xmodmap  #每次启动i3都打开screenky
+exec_always kill screenkey
+exec_always sleep 1.5;screenkey
+#删除i3上面的标题栏
+new_window 1pixel
+
+
+
+
+
+########
+#更改外观样式 图标 鼠标 主题
+sudo pacman -S lxappearance
+
+sudo pacman -S feh
+feh
+sudo pacman -S variety #自动换壁纸
+variety
+#终端半透明
+vim .config/alacritty/alacritty.yml
+background_opacity:0.6
+#i3没有渲染器，才能半透明
+sudo pacman -S compton  #compton已经被picom 替代
+
+vim ~/.config/i3/config
+gaps inner 15
+exec_always variety
+exec_always compton
+
+#######
+#linux下常用软件
+#中文输入法
+sudo pacman -S fcitix fcitix-im fcitix-configtoo
+sudo pacman -S fcitix-sogoupinyin
+vim ~/.xprofile
+export GTK_IM_MODULE=fcitix
+export QT_IM_MODULE=fcitix
+export XMODIFIERS="@im=fcitix"
+reboot
+
+sudo pacman -S chromium
+#修图gimp
+#thunderbird email软件
+#sudo pacman -S libreoffice
+#sudo -S vlc 视频软件
+#sudo pacman -S transmission-
+#sudo pacman -S 
+sudo pacman -S ranger
+ranger --copy-config=rc
+sudo pacman -S albert #类似于listry
+#不建议安装polybar
+sudo pacman -S polybar
+cd /usr/share/doc/polybar/config
+cd ~
+mkdir polybar
+cp /usr/share/doc/polybar/config polybar/
+#自动打开polybar
+vim launch.sh
+kill polybar
+polybar example
+
+chmod +x launch.sh
+vim ./config/i3/config
+exec_always ~/.config/polybar/launch.sh
+
+
+
+
+
+
+
+

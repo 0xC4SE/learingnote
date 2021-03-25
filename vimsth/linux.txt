@@ -1,0 +1,42 @@
+
+Manjaro
+
+bin :可执行文件 程序存的地方
+boot :系统启动文件
+dev :硬件 tty是terminal 
+etc :配置文件，是系统配置文件 需要管理员权限
+home :家目录 
+mnt :mount 挂载
+proc :进程的文件 
+root :root用户登录你的家目录
+srv :服务文件
+sys :系统文件夹 关于你系统
+usr :装什么软件啊 local里面
+var :可变的的文件夹可能会变大 有缓存
+
+linux命令
+pwd :当前在哪个目录
+ls : 列出你的文件和文件夹 -a显示所有文件
+man :查看一个命令的使用方法
+cd :切换目录 cd ~/Desktop
+mkdir :新建一个文件夹
+touch :新建一个文件
+nano 文件 :打开文件
+vim 文件 :打开文件
+cat 文件 :终端查看文件内容
+less 文件 :查看文件
+
+
+mv file ~/Desktop/  :移动文件到路径
+mv file ~/Desktop/newfile  :移动并重命名文件
+
+mv file.txt newfile.txt  :mv也重命名文件
+
+cp file.txt file_duplicated.txt  :复制一个文件
+
+rm file.txt :删除一个文件
+rm -r wenjianjia :删除一个文件夹及其内容
+
+
+
+

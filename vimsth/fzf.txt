@@ -1,0 +1,3 @@
+
+vim .zshrc
+yay -S the_silver_searcher
